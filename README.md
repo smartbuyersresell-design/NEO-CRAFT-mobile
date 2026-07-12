@@ -1,8 +1,8 @@
-# NEO CRAFT
+# NEO CRAFT ✨️
 
 A browser voxel sandbox inspired by classic block-building games.
 
-## Features
+## Features 🎃
 - Chunk-based procedural world
 - Grass, dirt, stone, sand, water, flowers, tall grass, trees, glass
 - Day/night cycle
@@ -15,14 +15,14 @@ A browser voxel sandbox inspired by classic block-building games.
 - Desktop and mobile controls
 - Installable as a mobile app (PWA): "Add to Home Screen" on Android/iOS, works offline, fullscreen landscape mode, custom app icon
 
-## Installing as a mobile app
+## Installing as a mobile app ⬇️
 - **Android (Chrome)**: open the site, tap the "📲 Install App" button on the start screen (or the browser's own "Add to Home Screen" prompt). It installs like a native app icon and opens fullscreen.
 - **iOS (Safari)**: open the site, tap Share → "Add to Home Screen". iOS doesn't support the install prompt button, but the app icon and fullscreen mode work the same way.
 - Once installed, the game works offline thanks to the service worker (`sw.js`), which caches all game files.
 
-## Run
+## Run 🎮
 Open `index.html` in a browser.
 
-## Notes
+## Notes ♦️
 - For offline use, download Three.js locally and replace the CDN link if needed.
 - Texture PNG files are placeholders; you can replace them with pixel-art assets later.
