@@ -1,31 +1,53 @@
 (function () {
   'use strict';
-  const W = window.NEO;
-  W.chunks = new Map();
-  W.key = (cx, cz) => `${cx},${cz}`;
-  W.chunkOf = (x, z) => [Math.floor(x / W.CHUNK), Math.floor(z / W.CHUNK)];
+  const W = window.NEO || (window.NEO = {});
+
+  W.chunks = W.chunks || new Map();
+
   W.makeChunk = (cx, cz) => {
-    const k = W.key(cx, cz);
-    if (W.chunks.has(k)) return W.chunks.get(k);
-    const c = { cx, cz, blocks: new Uint8Array(W.CHUNK * W.SY * W.CHUNK), dirty: true };
-    W.chunks.set(k, c);
+    const key = cx + ',' + cz;
+    if (W.chunks.has(key)) return W.chunks.get(key);
+    
+    const c = {
+      cx: cx,
+      cz: cz,
+      blocks: new Uint8Array(W.CHUNK * W.SY * W.CHUNK)
+    };
+    W.chunks.set(key, c);
     return c;
   };
-  W.idx = (x, y, z) => x + z * W.CHUNK + y * W.CHUNK * W.CHUNK;
+
+  W.idx = (x, y, z) => {
+    if (x < 0 || x >= W.CHUNK || y < 0 || y >= W.SY || z < 0 || z >= W.CHUNK) return -1;
+    return (y * W.CHUNK * W.CHUNK) + (z * W.CHUNK) + x;
+  };
+
   W.getBlock = (x, y, z) => {
     if (y < 0 || y >= W.SY) return W.BLOCK.AIR;
-    const [cx, cz] = W.chunkOf(x, z), c = W.chunks.get(W.key(cx, cz));
-    if (!c) return W.BLOCK.AIR;
+    const cx = Math.floor(x / W.CHUNK);
+    const cz = Math.floor(z / W.CHUNK);
     const lx = ((x % W.CHUNK) + W.CHUNK) % W.CHUNK;
     const lz = ((z % W.CHUNK) + W.CHUNK) % W.CHUNK;
-    return c.blocks[W.idx(lx, y, lz)] || W.BLOCK.AIR;
+    const chunk = W.chunks.get(cx + ',' + cz);
+    if (!chunk) return W.BLOCK.AIR;
+    const i = W.idx(lx, y, lz);
+    return i < 0 ? W.BLOCK.AIR : chunk.blocks[i];
   };
-  W.setBlock = (x, y, z, v) => {
+
+  W.setBlock = (x, y, z, b) => {
     if (y < 0 || y >= W.SY) return;
-    const [cx, cz] = W.chunkOf(x, z), c = W.makeChunk(cx, cz);
+    const cx = Math.floor(x / W.CHUNK);
+    const cz = Math.floor(z / W.CHUNK);
     const lx = ((x % W.CHUNK) + W.CHUNK) % W.CHUNK;
     const lz = ((z % W.CHUNK) + W.CHUNK) % W.CHUNK;
-    c.blocks[W.idx(lx, y, lz)] = v;
-    c.dirty = true;
+    const chunk = W.makeChunk(cx, cz);
+    if (!chunk) return;
+    const i = W.idx(lx, y, lz);
+    if (i >= 0) {
+      chunk.blocks[i] = b;
+      if (typeof W.buildMesh === 'function') W.buildMesh();
+    }
   };
+
+  console.log('[NEO] Chunk system loaded');
 })();

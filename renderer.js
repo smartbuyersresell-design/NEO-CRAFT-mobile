@@ -2,31 +2,43 @@
   'use strict';
   const W = window.NEO || (window.NEO = {});
 
-  // Basic three setup
-  W.scene = new THREE.Scene();
-  W.camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 400);
+  // Initialize THREE scene
+  if (typeof THREE === 'undefined') {
+    console.error('[NEO] THREE.js not loaded!');
+    return;
+  }
 
-  W.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  W.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
-  W.renderer.setSize(innerWidth, innerHeight);
+  W.scene = new THREE.Scene();
+  W.camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 400);
+  W.camera.position.y = 40;
+
+  W.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', alpha: false });
+  W.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  W.renderer.setSize(window.innerWidth, window.innerHeight);
+  W.renderer.shadowMap.enabled = false;
   document.body.appendChild(W.renderer.domElement);
 
-  // lights and sky
-  W.scene.background = new THREE.Color(0x8fd0ef);
-  W.scene.fog = new THREE.Fog(0x8fd0ef, 40, 140);
+  // Lighting
+  W.scene.background = new THREE.Color(0x87CEEB);
+  W.scene.fog = new THREE.Fog(0x87CEEB, 50, 150);
+  
   const hemi = new THREE.HemisphereLight(0xffffff, 0x445533, 0.9);
   const sun = new THREE.DirectionalLight(0xfff3d0, 0.9);
-  const amb = new THREE.AmbientLight(0xffffff, 0.25);
+  sun.position.set(100, 80, 100);
+  const amb = new THREE.AmbientLight(0xffffff, 0.35);
   W.scene.add(hemi, sun, amb);
-  W.hemi = hemi; W.sun = sun; W.amb = amb;
+  W.hemi = hemi;
+  W.sun = sun;
+  W.amb = amb;
 
-  W.sunMesh = new THREE.Mesh(new THREE.SphereGeometry(4, 10, 10), new THREE.MeshBasicMaterial({ color: 0xfff2b0 }));
-  W.moonMesh = new THREE.Mesh(new THREE.SphereGeometry(3, 10, 10), new THREE.MeshBasicMaterial({ color: 0xcfd8ee }));
+  // Sun & Moon
+  W.sunMesh = new THREE.Mesh(new THREE.SphereGeometry(4, 8, 8), new THREE.MeshBasicMaterial({ color: 0xfff2b0 }));
+  W.moonMesh = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 8), new THREE.MeshBasicMaterial({ color: 0xcfd8ee }));
   W.scene.add(W.sunMesh, W.moonMesh);
 
-  // starfield (reduced count for perf)
+  // Starfield
   (function createStars() {
-    const STAR_COUNT = 800;
+    const STAR_COUNT = 500;
     const stars = new Float32Array(STAR_COUNT * 3);
     for (let i = 0; i < stars.length; i += 3) {
       const theta = Math.random() * Math.PI * 2;
@@ -43,14 +55,15 @@
     W.scene.add(W.starPoints);
   })();
 
-  // Atlas generator (procedural, runtime)
+  // Texture Atlas
   W.createAtlas = () => {
     if (W._atlas) return W._atlas;
     const tileSize = 32;
     const tilesPerRow = 8;
     const atlasSize = tileSize * tilesPerRow;
     const canvas = document.createElement('canvas');
-    canvas.width = atlasSize; canvas.height = atlasSize;
+    canvas.width = atlasSize;
+    canvas.height = atlasSize;
     const ctx = canvas.getContext('2d');
 
     const drawTile = (idx, drawFn) => {
@@ -62,7 +75,10 @@
         for (let x = 0; x < tileSize; x++) {
           const off = (y * tileSize + x) * 4;
           const col = drawFn(x, y, tileSize);
-          data[off] = col[0]; data[off+1] = col[1]; data[off+2] = col[2]; data[off+3] = col[3];
+          data[off] = col[0];
+          data[off+1] = col[1];
+          data[off+2] = col[2];
+          data[off+3] = col[3];
         }
       }
       ctx.putImageData(img, tx, ty);
@@ -92,36 +108,7 @@
     return W._atlas;
   };
 
-  // water shader (inline)
-  const waterVert = `
-    varying vec2 vUv;
-    varying vec3 vNormal;
-    attribute vec2 uv;
-    attribute vec3 normal;
-    void main() {
-      vUv = uv;
-      vNormal = normal;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `;
-  const waterFrag = `
-    precision mediump float;
-    varying vec2 vUv;
-    varying vec3 vNormal;
-    uniform sampler2D map;
-    uniform float time;
-    uniform vec3 lightDir;
-    void main() {
-      float ripple = 0.02 * sin((vUv.x + vUv.y) * 30.0 + time * 3.0);
-      vec2 uv = vUv + vec2(ripple, ripple * 0.6);
-      vec4 col = texture2D(map, uv);
-      float f = clamp(1.0 - dot(normalize(vNormal), vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
-      vec3 waterColor = mix(col.rgb * 0.75, vec3(0.15,0.40,0.80), f * 0.85);
-      float light = clamp(dot(normalize(vNormal), normalize(lightDir)), 0.0, 1.0) * 0.6 + 0.4;
-      gl_FragColor = vec4(waterColor * light, col.a * 0.88);
-    }
-  `;
-
+  // Face definitions
   const F = [
     [1,0,0,[1,0,0,1,1,0,1,1,1,1,0,1],'side'],
     [-1,0,0,[0,0,1,0,1,1,0,1,0,0,0,0],'side'],
@@ -133,51 +120,23 @@
 
   const isSolidBlock = id => id !== W.BLOCK.AIR && id !== W.BLOCK.WATER;
 
-  // reuse materials & water uniforms
   W._solidMat = null;
   W._transMat = null;
-  W.waterMaterial = W.waterMaterial || null;
-  W.waterUniforms = W.waterUniforms || null;
 
-  const createWaterMaterial = (atlasTex) => {
-    if (W.waterMaterial && W.waterUniforms) return { mat: W.waterMaterial, uniforms: W.waterUniforms };
-    const uniforms = {
-      map: { value: atlasTex },
-      time: { value: 0.0 },
-      lightDir: { value: new THREE.Vector3(0.5, 1.0, 0.2) }
-    };
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: waterVert,
-      fragmentShader: waterFrag,
-      uniforms,
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    });
-    W.waterMaterial = mat;
-    W.waterUniforms = uniforms;
-    return { mat, uniforms };
-  };
-
-  // heavy build implementation (debounced)
   const doBuildMesh = () => {
     W._buildPending = false;
-    const atlas = (W._atlas && W._atlas.texture) || W.createAtlas().texture;
-
-    if (!W._solidMat) W._solidMat = new THREE.MeshLambertMaterial({ map: atlas, vertexColors: true });
-    else W._solidMat.map = atlas;
-    if (!W._transMat) W._transMat = new THREE.MeshPhongMaterial({ map: atlas, vertexColors: true, transparent: true, opacity: 0.92, depthWrite: false, side: THREE.DoubleSide });
-    else W._transMat.map = atlas;
-
-    if (!W.waterMaterial) createWaterMaterial(atlas);
-    else W.waterUniforms.map && (W.waterUniforms.map.value = atlas);
+    const atlas = W.createAtlas();
+    
+    if (!W._solidMat) W._solidMat = new THREE.MeshLambertMaterial({ map: atlas.texture, vertexColors: true });
+    else W._solidMat.map = atlas.texture;
+    if (!W._transMat) W._transMat = new THREE.MeshPhongMaterial({ map: atlas.texture, vertexColors: true, transparent: true, opacity: 0.92, depthWrite: false, side: THREE.DoubleSide });
+    else W._transMat.map = atlas.texture;
 
     const posS = [], norS = [], colS = [], uvS = [];
     const posT = [], norT = [], colT = [], uvT = [];
-    const posW = [], norW = [], colW = [], uvW = [];
 
+    if (!W.chunks) return;
     for (const c of W.chunks.values()) {
-      // skip empty chunk quickly
       let empty = true;
       for (let i = 0; i < c.blocks.length; i++) { if (c.blocks[i]) { empty = false; break; } }
       if (empty) continue;
@@ -185,17 +144,17 @@
       for (let x = 0; x < W.CHUNK; x++) {
         for (let y = 0; y < W.SY; y++) {
           for (let z = 0; z < W.CHUNK; z++) {
-            const b = c.blocks[W.idx(x,y,z)];
+            const b = c.blocks[W.idx(x, y, z)];
             if (!b || b === W.BLOCK.AIR) continue;
 
             const gx = c.cx * W.CHUNK + x;
             const gz = c.cz * W.CHUNK + z;
-            const mapping = (W.BLOCK_UV && W.BLOCK_UV[b]) ? W.BLOCK_UV[b] : { top:0, side:0, bottom:0 };
-            const vnoise = 0.9 + (W.hash2 ? (W.hash2(gx*13 + y*7, gz*17) - 0.5) * 0.18 : 0);
+            const mapping = (W.BLOCK_UV && W.BLOCK_UV[b]) ? W.BLOCK_UV[b] : { top: 0, side: 0, bottom: 0 };
+            const vnoise = 0.9 + (W.hash2 ? (W.hash2(gx * 13 + y * 7, gz * 17) - 0.5) * 0.18 : 0);
 
             for (const f of F) {
               const nx = gx + f[0], ny = y + f[1], nz = gz + f[2];
-              const nb = W.getBlock ? W.getBlock(nx, ny, nz) : 0;
+              const nb = W.getBlock(nx, ny, nz);
               if (nb !== W.BLOCK.AIR && nb !== W.BLOCK.WATER) continue;
 
               const faceType = f[4];
@@ -204,36 +163,44 @@
 
               const shadeBase = (faceType === 'top') ? 1.0 : (faceType === 'bottom' ? 0.60 : 0.78);
               let oc = 0;
-              if (isSolidBlock(W.getBlock(gx+1,y,gz))) oc++;
-              if (isSolidBlock(W.getBlock(gx-1,y,gz))) oc++;
-              if (isSolidBlock(W.getBlock(gx,y,gz+1))) oc++;
-              if (isSolidBlock(W.getBlock(gx,y,gz-1))) oc++;
+              if (isSolidBlock(W.getBlock(gx+1, y, gz))) oc++;
+              if (isSolidBlock(W.getBlock(gx-1, y, gz))) oc++;
+              if (isSolidBlock(W.getBlock(gx, y, gz+1))) oc++;
+              if (isSolidBlock(W.getBlock(gx, y, gz-1))) oc++;
               const ocFactor = 1 - Math.min(0.5, oc * 0.06);
 
-              const baseColor = W.BLOCKCOLORS[b] ? (W.BLOCKCOLORS[b][faceType] || W.BLOCKCOLORS[b].side) : [0.6,0.6,0.6];
+              const baseColor = W.BLOCKCOLORS[b] ? (W.BLOCKCOLORS[b][faceType] || W.BLOCKCOLORS[b].side) : [0.6, 0.6, 0.6];
               const r0 = baseColor[0] * shadeBase * ocFactor * vnoise;
               const g0 = baseColor[1] * shadeBase * ocFactor * vnoise;
               const b0 = baseColor[2] * shadeBase * ocFactor * vnoise;
 
               const cr = f[3];
-              const order = [0,1,2,0,2,3];
+              const order = [0, 1, 2, 0, 2, 3];
 
-              const tileX = tileIndex % W._atlas.tilesPerRow;
-              const tileY = Math.floor(tileIndex / W._atlas.tilesPerRow);
-              const u0 = (tileX * W._atlas.tileSize) / W._atlas.atlasSize;
-              const v0 = (tileY * W._atlas.tileSize) / W._atlas.atlasSize;
-              const u1 = ((tileX+1) * W._atlas.tileSize) / W._atlas.atlasSize;
-              const v1 = ((tileY+1) * W._atlas.tileSize) / W._atlas.atlasSize;
-              const faceUVs = [[u1,v1],[u0,v1],[u0,v0],[u1,v0]];
+              const tileX = tileIndex % atlas.tilesPerRow;
+              const tileY = Math.floor(tileIndex / atlas.tilesPerRow);
+              const u0 = (tileX * atlas.tileSize) / atlas.atlasSize;
+              const v0 = (tileY * atlas.tileSize) / atlas.atlasSize;
+              const u1 = ((tileX + 1) * atlas.tileSize) / atlas.atlasSize;
+              const v1 = ((tileY + 1) * atlas.tileSize) / atlas.atlasSize;
+              const faceUVs = [[u1, v1], [u0, v1], [u0, v0], [u1, v0]];
 
               let targetPos, targetNor, targetCol, targetUV;
-              if (b === W.BLOCK.WATER) { targetPos = posW; targetNor = norW; targetCol = colW; targetUV = uvW; }
-              else if (isTrans) { targetPos = posT; targetNor = norT; targetCol = colT; targetUV = uvT; }
-              else { targetPos = posS; targetNor = norS; targetCol = colS; targetUV = uvS; }
+              if (isTrans) {
+                targetPos = posT;
+                targetNor = norT;
+                targetCol = colT;
+                targetUV = uvT;
+              } else {
+                targetPos = posS;
+                targetNor = norS;
+                targetCol = colS;
+                targetUV = uvS;
+              }
 
               for (let oi = 0; oi < order.length; oi++) {
                 const vi = order[oi];
-                const vx = cr[vi*3], vy = cr[vi*3+1], vz = cr[vi*3+2];
+                const vx = cr[vi * 3], vy = cr[vi * 3 + 1], vz = cr[vi * 3 + 2];
                 targetPos.push(gx + vx, y + vy, gz + vz);
                 targetNor.push(f[0], f[1], f[2]);
                 targetCol.push(r0, g0, b0);
@@ -259,39 +226,35 @@
 
     const geoS = makeGeo(posS, norS, colS, uvS);
     const geoT = makeGeo(posT, norT, colT, uvT);
-    const geoW = makeGeo(posW, norW, colW, uvW);
 
-    try { if (W.mesh) { W.scene.remove(W.mesh); W.mesh.geometry && W.mesh.geometry.dispose(); } } catch (e){}
-    try { if (W.transMesh) { W.scene.remove(W.transMesh); W.transMesh.geometry && W.transMesh.geometry.dispose(); } } catch (e){}
-    try { if (W.waterMesh) { W.scene.remove(W.waterMesh); W.waterMesh.geometry && W.waterMesh.geometry.dispose(); } } catch (e){}
+    try { if (W.mesh) { W.scene.remove(W.mesh); W.mesh.geometry && W.mesh.geometry.dispose(); } } catch (e) {}
+    try { if (W.transMesh) { W.scene.remove(W.transMesh); W.transMesh.geometry && W.transMesh.geometry.dispose(); } } catch (e) {}
 
     if (geoS) { W.mesh = new THREE.Mesh(geoS, W._solidMat); W.scene.add(W.mesh); } else W.mesh = null;
     if (geoT) { W.transMesh = new THREE.Mesh(geoT, W._transMat); W.scene.add(W.transMesh); } else W.transMesh = null;
-    if (geoW) { W.waterMesh = new THREE.Mesh(geoW, W.waterMaterial); W.scene.add(W.waterMesh); } else W.waterMesh = null;
+    
+    console.log('[NEO] Mesh built');
   };
 
-  // debounced wrapper so multiple quick calls coalesce
   W._buildPending = false;
   W.buildMesh = () => {
     if (W._buildPending) return;
     W._buildPending = true;
     setTimeout(() => {
-      try { doBuildMesh(); } catch (e) { console.error('buildMesh error', e); }
-    }, 120);
+      try { doBuildMesh(); } catch (e) { console.error('[NEO] buildMesh error:', e); }
+    }, 100);
   };
 
-  // resize handler
   W.onResize = () => {
-    W.camera.aspect = innerWidth / innerHeight;
+    W.camera.aspect = window.innerWidth / window.innerHeight;
     W.camera.updateProjectionMatrix();
-    W.renderer.setSize(innerWidth, innerHeight);
+    W.renderer.setSize(window.innerWidth, window.innerHeight);
   };
   window.addEventListener('resize', W.onResize);
 
-  // tick loop for water & stars
+  // Tick loop for animation
   (function tickLoop() {
-    const tick = (now) => {
-      if (W.waterUniforms) W.waterUniforms.time.value = now * 0.001;
+    const tick = () => {
       let dayLight = 1;
       if (typeof W.sunElevation === 'function') {
         try { dayLight = Math.max(0, W.sunElevation()); } catch (e) { dayLight = 1; }
@@ -302,6 +265,5 @@
     requestAnimationFrame(tick);
   })();
 
-  // expose createAtlas explicitly
-  W.createAtlas = W.createAtlas;
+  console.log('[NEO] Renderer initialized');
 })();

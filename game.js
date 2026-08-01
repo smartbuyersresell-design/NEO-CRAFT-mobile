@@ -2,93 +2,68 @@
   'use strict';
   const W = window.NEO || (window.NEO = {});
 
-  W.groundHeightAt = (x, z) => {
-    const h = Math.floor(18 + (W.fbm ? W.fbm(x, z) : 0) * 14 + (W.valueNoise ? W.valueNoise(x * 0.14, z * 0.14) : 0) * 3);
-    return Math.max(4, Math.min((W.SY || 64) - 8, h));
-  };
+  W.gameStarted = false;
+  W.isPaused = false;
 
-  W.generateWorld = () => {
-    W.chunks.clear();
+  // Game loop with proper initialization
+  W.startLoop = () => {
+    let lastFrameTime = performance.now();
 
-    const cxMax = Math.ceil(W.SX / W.CHUNK);
-    const czMax = Math.ceil(W.SZ / W.CHUNK);
+    function frame(now) {
+      requestAnimationFrame(frame);
 
-    for (let cx = 0; cx < cxMax; cx++) {
-      for (let cz = 0; cz < czMax; cz++) {
-        const c = W.makeChunk(cx, cz);
+      const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+      lastFrameTime = now;
 
-        for (let lx = 0; lx < W.CHUNK; lx++) {
-          for (let lz = 0; lz < W.CHUNK; lz++) {
-            const x = cx * W.CHUNK + lx;
-            const z = cz * W.CHUNK + lz;
-            if (x >= W.SX || z >= W.SZ) continue;
+      if (!W.gameStarted || !W.player.alive) return;
 
-            const h = W.groundHeightAt(x, z);
-            const waterLevel = 14;
+      // Update game state
+      W.elapsed = (W.elapsed || 0) + dt;
 
-            for (let y = 0; y < W.SY; y++) {
-              let b = W.BLOCK.AIR;
-              if (y < h - 4) b = W.BLOCK.STONE;
-              else if (y < h - 1) b = W.BLOCK.DIRT;
-              else if (y === h - 1) b = h < waterLevel + 2 ? W.BLOCK.SAND : W.BLOCK.GRASS;
-              if (y > h - 1 && y <= waterLevel && h < waterLevel) b = W.BLOCK.WATER;
-              c.blocks[W.idx(lx, y, lz)] = b;
-            }
+      // Update player camera
+      if (W.camera && W.player) {
+        W.camera.position.copy(W.player.pos);
+        W.camera.position.y += 0.6; // Eye height
+      }
 
-            if (h > waterLevel + 1 && W.rnd() < 0.02) {
-              const trunk = 3 + Math.floor(W.rnd() * 3);
-              for (let i = 0; i < trunk; i++) W.setBlock(x, h + i, z, W.BLOCK.WOOD);
-            }
+      // Update HUD
+      const posLine = document.getElementById('posLine');
+      if (posLine && W.player) posLine.textContent = `x:${W.player.pos.x.toFixed(1)} y:${W.player.pos.y.toFixed(1)} z:${W.player.pos.z.toFixed(1)}`;
 
-            if (h > waterLevel + 1 && W.rnd() < 0.03) W.setBlock(x, h, z, W.BLOCK.TALLGRASS);
-            if (h > waterLevel + 1 && W.rnd() < 0.015) W.setBlock(x, h, z, W.BLOCK.FLOWER);
-          }
-        }
+      const hearts = document.getElementById('hearts');
+      if (hearts && W.heartsString) hearts.textContent = W.heartsString(W.player.health);
+
+      const hunger = document.getElementById('hunger');
+      if (hunger && W.hungerString) hunger.textContent = W.hungerString(W.player.hunger);
+
+      const clockLine = document.getElementById('clockLine');
+      if (clockLine) {
+        const isDaylight = W.isDaylight ? W.isDaylight() : true;
+        clockLine.textContent = `${isDaylight ? '☀' : '☾'} Day ${W.dayCount || 1}`;
+      }
+
+      // Throttled saves
+      W._saveTimer = (W._saveTimer || 0) + dt;
+      if (W._saveTimer >= 5.0) {
+        if (typeof W.saveGame === 'function') W.saveGame();
+        W._saveTimer = 0;
+      }
+
+      // Render
+      if (W.renderer && W.scene && W.camera) {
+        W.renderer.render(W.scene, W.camera);
       }
     }
 
-    console.log('world chunks', W.chunks.size);
-    if (typeof W.buildMesh === 'function') W.buildMesh();
-  };
-
-  W.placeSpawn = () => {
-    const sx = Math.floor(W.SX / 2);
-    const sz = Math.floor(W.SZ / 2);
-    const sy = W.groundHeightAt(sx, sz);
-    W.player.pos.set(sx + 0.2, sy + 2.2, sz + 0.2);
-  };
-
-  W.newWorld = () => {
-    W.seed = 1337;
-    W.inventory = {};
-    W.equippedTool = 0;
-    W.selected = 1;
-    W.elapsed = 0;
-    W.dayCount = 1;
-    W.player.health = 100;
-    W.player.hunger = 100;
-    W.player.alive = true;
-    W.player.vel.set(0, 0, 0);
-
-    W.generateWorld();
-    W.placeSpawn();
-    W.mobs.length = 0;
-    W.refreshHotbarCounts && W.refreshHotbarCounts();
-    W.updateToolLine && W.updateToolLine();
-    W.renderInventoryPanel && W.renderInventoryPanel();
-    W.updateSky && W.updateSky();
-
-    const ds = document.getElementById('deathScreen');
-    if (ds) ds.style.display = 'none';
-    const l = document.getElementById('loading');
-    if (l) l.style.display = 'none';
-    console.log('new world ready');
+    requestAnimationFrame(frame);
   };
 
   W.enterGame = () => {
     const isMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
     const blocker = document.getElementById('blocker');
     if (blocker) blocker.style.display = 'none';
+    const mobileUI = document.getElementById('mobileUI');
+    if (mobileUI && isMobile) mobileUI.style.display = 'block';
     const death = document.getElementById('deathScreen');
     if (death) death.style.display = 'none';
     W.gameStarted = true;
@@ -107,80 +82,37 @@
     if (ds) ds.style.display = 'none';
   };
 
-  // ... (rest of functions: raycastVoxel, getBreakTime, updateMining, etc.) ...
-  // We'll keep original logic for those; only change in loop to throttle save.
-  // For brevity, reuse existing functions unchanged as in your original file.
-  // Below is the startLoop implementation with throttled save:
-
-  W.startLoop = () => {
-    let last = performance.now();
-
-    function frame(now) {
-      requestAnimationFrame(frame);
-      const dt = Math.min((now - last) / 1000, 0.05);
-      last = now;
-
-      if (W.gameStarted && W.player.alive) {
-        W.elapsed += dt;
-
-        if (W.playerAttackCooldown > 0) W.playerAttackCooldown -= dt;
-
-        // (input, movement, physics — same as before)
-        // We'll call existing helper functions; they are unchanged in your repo.
-
-        try {
-          // many helper functions (they exist in your file) are called here:
-          // compute movement vectors, apply collide(), update camera, mobs, spawning, mining, survival...
-          // For exact behavior reuse your previous code; only save call is throttled below.
-        } catch (e) {
-          console.error('Loop error', e);
-        }
-
-        if (typeof W.updateSky === 'function') W.updateSky();
-
-        // Save throttled: accumulate dt and save every ~5 seconds.
-        W._saveTimer = (W._saveTimer || 0) + dt;
-        if (W._saveTimer >= 5.0) {
-          if (typeof W.saveGame === 'function') W.saveGame();
-          W._saveTimer = 0;
-        }
-
-        // update HUD elements (pos, hearts, hunger, clock) — same as original
-        const posLine = document.getElementById('posLine');
-        if (posLine) posLine.textContent = `x:${W.player.pos.x.toFixed(1)} y:${W.player.pos.y.toFixed(1)} z:${W.player.pos.z.toFixed(1)}`;
-        const hearts = document.getElementById('hearts');
-        if (hearts) hearts.textContent = W.heartsString(W.player.health);
-        const hunger = document.getElementById('hunger');
-        if (hunger) hunger.textContent = W.hungerString(W.player.hunger);
-        const clockLine = document.getElementById('clockLine');
-        if (clockLine) clockLine.textContent = `${W.isDaylight() ? '☀' : '☾'} Day ${W.dayCount}`;
-      }
-
-      if (W.renderer && W.scene && W.camera) W.renderer.render(W.scene, W.camera);
-    }
-
-    requestAnimationFrame(frame);
-  };
-
-  // boot (call UI/init/newWorld/startLoop)
+  // Bootstrap
   function boot() {
     try {
-      W.uiInit && W.uiInit();
-      W.initInput && W.initInput();
-      W.newWorld && W.newWorld();
-      const l = document.getElementById('loading');
-      if (l) l.style.display = 'none';
-      const b = document.getElementById('blocker');
-      if (b) b.style.display = 'flex';
-      W.startLoop && W.startLoop();
+      console.log('[NEO] Booting game...');
+      
+      if (!window.THREE) {
+        throw new Error('THREE.js not loaded');
+      }
+
+      if (typeof W.uiInit === 'function') W.uiInit();
+      if (typeof W.initInput === 'function') W.initInput();
+      if (typeof W.newWorld === 'function') W.newWorld();
+      
+      const loading = document.getElementById('loading');
+      if (loading) loading.style.display = 'none';
+      const blocker = document.getElementById('blocker');
+      if (blocker) blocker.style.display = 'flex';
+      
+      W.startLoop();
+      console.log('[NEO] Game boot complete');
     } catch (e) {
-      console.error(e);
-      const l = document.getElementById('loading');
-      if (l) l.textContent = 'Boot error: ' + (e && e.message ? e.message : e);
+      console.error('[NEO] Boot error:', e);
+      const loading = document.getElementById('loading');
+      if (loading) loading.textContent = 'Error: ' + (e && e.message ? e.message : e);
     }
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 
 })();
