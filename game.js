@@ -3,58 +3,38 @@
   const W = window.NEO || (window.NEO = {});
 
   W.gameStarted = false;
-  W.isPaused = false;
+  W.playerAttackCooldown = 0;
+  W.isDaylight = () => true;
+  W.heartsString = h => '❤'.repeat(Math.ceil(h / 20));
+  W.hungerString = h => '🍗'.repeat(Math.ceil(h / 20));
+  W.updateSky = () => {};
+  W.initInput = () => {};
+  W.flashDamage = () => {};
 
-  // Game loop with proper initialization
   W.startLoop = () => {
-    let lastFrameTime = performance.now();
-
-    function frame(now) {
+    let lastTime = performance.now();
+    const frame = now => {
       requestAnimationFrame(frame);
-
-      const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
-      lastFrameTime = now;
-
-      if (!W.gameStarted || !W.player.alive) return;
-
-      // Update game state
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+      if (!W.gameStarted || !W.player || !W.player.alive) return;
       W.elapsed = (W.elapsed || 0) + dt;
-
-      // Update player camera
       if (W.camera && W.player) {
         W.camera.position.copy(W.player.pos);
-        W.camera.position.y += 0.6; // Eye height
+        W.camera.position.y += 0.6;
       }
-
-      // Update HUD
       const posLine = document.getElementById('posLine');
       if (posLine && W.player) posLine.textContent = `x:${W.player.pos.x.toFixed(1)} y:${W.player.pos.y.toFixed(1)} z:${W.player.pos.z.toFixed(1)}`;
-
       const hearts = document.getElementById('hearts');
-      if (hearts && W.heartsString) hearts.textContent = W.heartsString(W.player.health);
-
+      if (hearts) hearts.textContent = W.heartsString(W.player.health);
       const hunger = document.getElementById('hunger');
-      if (hunger && W.hungerString) hunger.textContent = W.hungerString(W.player.hunger);
-
+      if (hunger) hunger.textContent = W.hungerString(W.player.hunger);
       const clockLine = document.getElementById('clockLine');
-      if (clockLine) {
-        const isDaylight = W.isDaylight ? W.isDaylight() : true;
-        clockLine.textContent = `${isDaylight ? '☀' : '☾'} Day ${W.dayCount || 1}`;
-      }
-
-      // Throttled saves
+      if (clockLine) clockLine.textContent = `☀ Day ${W.dayCount || 1}`;
       W._saveTimer = (W._saveTimer || 0) + dt;
-      if (W._saveTimer >= 5.0) {
-        if (typeof W.saveGame === 'function') W.saveGame();
-        W._saveTimer = 0;
-      }
-
-      // Render
-      if (W.renderer && W.scene && W.camera) {
-        W.renderer.render(W.scene, W.camera);
-      }
-    }
-
+      if (W._saveTimer >= 10) { if (typeof W.saveGame === 'function') W.saveGame(); W._saveTimer = 0; }
+      if (typeof W.updateMobs === 'function') W.updateMobs(dt);
+    };
     requestAnimationFrame(frame);
   };
 
@@ -82,37 +62,26 @@
     if (ds) ds.style.display = 'none';
   };
 
-  // Bootstrap
   function boot() {
     try {
-      console.log('[NEO] Booting game...');
-      
-      if (!window.THREE) {
-        throw new Error('THREE.js not loaded');
-      }
-
+      console.log('[NEO] Boot starting');
+      if (!window.THREE) throw new Error('THREE.js not loaded');
       if (typeof W.uiInit === 'function') W.uiInit();
-      if (typeof W.initInput === 'function') W.initInput();
-      if (typeof W.newWorld === 'function') W.newWorld();
-      
-      const loading = document.getElementById('loading');
-      if (loading) loading.style.display = 'none';
-      const blocker = document.getElementById('blocker');
-      if (blocker) blocker.style.display = 'flex';
-      
+      const l = document.getElementById('loading');
+      if (l) l.style.display = 'none';
+      const b = document.getElementById('blocker');
+      if (b) b.style.display = 'flex';
       W.startLoop();
-      console.log('[NEO] Game boot complete');
+      console.log('[NEO] Boot complete');
     } catch (e) {
       console.error('[NEO] Boot error:', e);
-      const loading = document.getElementById('loading');
-      if (loading) loading.textContent = 'Error: ' + (e && e.message ? e.message : e);
+      const l = document.getElementById('loading');
+      if (l) l.textContent = 'Error: ' + (e && e.message ? e.message : e);
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
-  } else {
-    boot();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 
+  console.log('[NEO] Game system ready');
 })();
